@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { ChatAnswer } from "./answer-types";
+import { COULD_NOT_GENERATE_OVERVIEW, OVERVIEW_QUESTION, type ChatAnswer } from "./answer-types";
 
 export const listResults = createServerFn({ method: "GET" }).handler(async () => {
   const { listPatientRecords, SESSION_PATIENT_ID } = await import("./records.server");
@@ -37,4 +37,19 @@ export const askAboutResult = createServerFn({ method: "POST" })
     const { callGateway } = await import("./gateway.server");
     const answer = await answerQuestion(rec, data, callGateway);
     return { ...answer, resultId: rec.id };
+  });
+
+/** Generates the result page's "Overview in plain English" box from the
+ * report. Always goes through the model — there is no stored overview text. */
+export const getOverview = createServerFn({ method: "GET" })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }): Promise<{ answer: string; sources: string[]; mode: "live" | "error" }> => {
+    const { getPatientRecord, SESSION_PATIENT_ID } = await import("./records.server");
+    const rec = getPatientRecord(SESSION_PATIENT_ID, data.id);
+    if (!rec) throw new Error("Result not found");
+    const { answerQuestion } = await import("./answer");
+    const { callGateway } = await import("./gateway.server");
+    const a = await answerQuestion(rec, { question: OVERVIEW_QUESTION, history: [] }, callGateway);
+    if (a.mode !== "live") return { answer: COULD_NOT_GENERATE_OVERVIEW, sources: [], mode: "error" };
+    return { answer: a.answer, sources: a.sources, mode: "live" };
   });

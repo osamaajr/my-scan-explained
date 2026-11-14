@@ -84,11 +84,11 @@ describe("source highlights", () => {
   it("Show source passes the cited sentence IDs, and those sentences render highlighted", async () => {
     const onShowSource = vi.fn();
     render(<Panel rec={chest} onShowSource={onShowSource} />);
-    mockAsk.mockResolvedValueOnce(liveReply(chest, "It's indeterminate.", ["r2", "r3", "r8"]));
+    mockAsk.mockResolvedValueOnce(liveReply(chest, "It's indeterminate.", ["r4", "r5", "r12"]));
     await send("Does this mean I have cancer?");
     fireEvent.click(screen.getByText("Show source"));
     const ids = onShowSource.mock.calls[0]![0] as string[];
-    expect(ids).toEqual(["r2", "r3", "r8"]);
+    expect(ids).toEqual(["r4", "r5", "r12"]);
     cleanup();
 
     const { container } = render(
@@ -100,8 +100,8 @@ describe("source highlights", () => {
       </div>,
     );
     const lit = [...container.querySelectorAll("[data-highlighted]")].map((e) => e.id);
-    expect(lit).toEqual(["s-r2", "s-r3", "s-r8"]);
-    expect(container.querySelector("#s-r3")!.textContent).toMatch(/indeterminate/);
+    expect(lit).toEqual(["s-r4", "s-r5", "s-r12"]);
+    expect(container.querySelector("#s-r5")!.textContent).toMatch(/indeterminate/);
   });
 });
 

@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { getPatientRecord, SESSION_PATIENT_ID } from "@/lib/records.server";
 import { answerQuestion, type ModelCaller } from "@/lib/answer";
 import { COULD_NOT_ANSWER, isSummaryRequest, SECTION_TITLES } from "@/lib/answer-types";
-import { checkChestBooking, checkChestCancer, checkKneeBooking, unknownSources } from "./grounding";
+import { checkChestBooking, checkChestCancer, checkKneeBooking, checkSpineFindings, unknownSources } from "./grounding";
 
 const chest = getPatientRecord(SESSION_PATIENT_ID, "ct-chest-2026-11-12")!;
 const knee = getPatientRecord(SESSION_PATIENT_ID, "mri-knee-2026-10-28")!;
+const spine = getPatientRecord(SESSION_PATIENT_ID, "mri-spine-2026-11-05")!;
 const ask = (rec: typeof chest, question: string, model: ModelCaller, timeoutMs?: number) =>
   answerQuestion(rec, { question, history: [] }, model, timeoutMs);
 
@@ -13,19 +14,25 @@ const ask = (rec: typeof chest, question: string, model: ModelCaller, timeoutMs?
 const chestCancerJSON = JSON.stringify({
   answer:
     'It\'s understandable to worry. The report doesn\'t say whether this is cancer. It describes a 7 mm nodule in the right upper lung that is "indeterminate" — its nature can\'t be decided from this scan alone. A question for your care team: "What will comparing my earlier scans tell us?"',
-  sources: ["r2", "r3", "r8"],
+  sources: ["r4", "r5", "r12"],
   sections: [],
 });
 const chestBookingJSON = JSON.stringify({
   answer:
     "No booking is shown in your available record. The radiologist recommends comparing with previous chest imaging, or a follow-up CT in 3 months if none is available. Your care team is requesting your earlier images and will contact you.",
-  sources: ["r8", "n1", "n2"],
+  sources: ["r12", "n1", "n2"],
   sections: [],
 });
 const kneeBookingJSON = JSON.stringify({
   answer:
     "The radiologist recommends an orthopaedic review. Your care team has booked an appointment for 2 December 2026 at 10:30.",
-  sources: ["k8", "m1"],
+  sources: ["k13", "m1"],
+  sections: [],
+});
+const spineFindingsJSON = JSON.stringify({
+  answer:
+    "The scan shows wear in the disc at L4/5, with a bulge pressing slightly on a nearby nerve — this fits with the pain running down your left leg. There's no evidence of cauda equina compression, which is the more urgent complication your care team would have been checking for.",
+  sources: ["sp6", "sp11"],
   sections: [],
 });
 
@@ -65,11 +72,16 @@ describe("live answers are correct and grounded, given a well-formed model reply
     expect(a.mode).toBe("live");
     expect(checkKneeBooking(knee, a)).toEqual([]);
   });
+  it("spine MRI: findings question keeps the L4/5 level and rules out cauda equina", async () => {
+    const a = await ask(spine, "What did the MRI find in my spine?", async () => spineFindingsJSON);
+    expect(a.mode).toBe("live");
+    expect(checkSpineFindings(spine, a)).toEqual([]);
+  });
   it("drops source IDs the model invents that aren't in the record", async () => {
     const a = await ask(chest, "Does this mean I have cancer?", async () =>
-      JSON.stringify({ answer: "Text", sources: ["r2", "zz9"], sections: [] }),
+      JSON.stringify({ answer: "Text", sources: ["r4", "zz9"], sections: [] }),
     );
-    expect(a).toMatchObject({ mode: "live", sources: ["r2"] });
+    expect(a).toMatchObject({ mode: "live", sources: ["r4"] });
   });
 });
 
@@ -77,12 +89,12 @@ describe("grounding checks catch bad answers", () => {
   it("accepts plain-English wording for 'indeterminate'", () => {
     const a = {
       answer: "The 7 mm nodule is uncertain: the scan can't tell what it is yet.",
-      sources: ["r2", "r3"],
+      sources: ["r4", "r5"],
     };
     expect(checkChestCancer(chest, a)).toEqual([]);
   });
   it("rejects citations that don't support the claims", () => {
-    const a = { answer: "There is a 7 mm nodule and it is indeterminate.", sources: ["r4", "r5"] };
+    const a = { answer: "There is a 7 mm nodule and it is indeterminate.", sources: ["r7", "r8"] };
     expect(checkChestCancer(chest, a)).toEqual(
       expect.arrayContaining([
         "no cited sentence supports the 7 mm nodule",
@@ -94,13 +106,13 @@ describe("grounding checks catch bad answers", () => {
     expect(
       checkChestCancer(chest, {
         answer: "The 7 mm indeterminate nodule is not cancer.",
-        sources: ["r2", "r3"],
+        sources: ["r4", "r5"],
       }),
     ).toContain("diagnoses or falsely reassures");
     expect(
       checkChestBooking(chest, {
         answer: "Your follow-up CT has been booked for 3 months, as recommended.",
-        sources: ["r8", "n1"],
+        sources: ["r12", "n1"],
       }),
     ).toContain("claims a confirmed booking");
   });

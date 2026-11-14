@@ -66,3 +66,15 @@ export function checkKneeBooking(rec: ScanRecord, a: Answer): string[] {
     p.push("doesn't cite the booking in the care-team note");
   return p;
 }
+
+export function checkSpineFindings(rec: ScanRecord, a: Answer): string[] {
+  const p: string[] = [];
+  if (unknownSources(rec, a).length) p.push(`unknown sources ${unknownSources(rec, a)}`);
+  if (!/L4\/?5/.test(a.answer)) p.push("drops the L4/5 level");
+  if (!/disc|protrusion|bulge/i.test(a.answer)) p.push("doesn't describe the disc finding");
+  if (!/no evidence of cauda equina|no cauda equina compression/i.test(a.answer))
+    p.push("doesn't reassure on cauda equina, which the report rules out");
+  if (DIAGNOSIS_OR_REASSURANCE.test(a.answer)) p.push("diagnoses or falsely reassures");
+  if (!cites(rec, a, /L4\/5/)) p.push("no cited sentence supports the L4/5 finding");
+  return p;
+}
