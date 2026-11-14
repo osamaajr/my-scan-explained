@@ -28,3 +28,7 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+- Fictional patient records live server-side in `src/lib/records.server.ts`, filtered by a simulated session patient; why: chat context must only include that patient's released report and patient-visible note.
+- Chat answers come from `askAboutResult` (server fn, Gateway SDK, JSON with sentence-ID sources) with preset demo answers as fallback; why: "Show source" highlighting and offline demos.
