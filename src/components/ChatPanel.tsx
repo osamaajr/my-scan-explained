@@ -3,8 +3,9 @@ import { X, Send } from "lucide-react";
 import { askAboutResult } from "@/lib/scans.functions";
 import { formatDate } from "@/components/AppShell";
 import { MedicalHelp } from "@/components/MedicalHelp";
+import type { Section } from "@/lib/demo-answers";
 
-type Msg = { role: "user" | "assistant"; text: string; sources?: string[]; mode?: "ai" | "demo" };
+type Msg = { role: "user" | "assistant"; text: string; sources?: string[]; sections?: Section[]; mode?: "ai" | "demo" };
 type Result = { id: string; name: string; shortName: string; date: string };
 
 // Conversations kept separately per result for this browser session.
@@ -47,7 +48,7 @@ export function ChatPanel({ result, open, onClose, onShowSource }: {
     try {
       const res = await askAboutResult({ data: { resultId: forId, question, history, demo } });
       if (mySeq !== seq.current || activeResultId !== forId || res.resultId !== forId) return; // stale: discard
-      setMsgs((m) => [...m, { role: "assistant", text: res.answer, sources: res.sources, mode: res.mode }]);
+      setMsgs((m) => [...m, { role: "assistant", text: res.answer, sources: res.sources, sections: res.sections, mode: res.mode }]);
     } catch {
       if (mySeq !== seq.current) return;
       setMsgs((m) => [...m, { role: "assistant", text: "Sorry, I couldn't answer just now. Please try again, or switch on demo mode." }]);
@@ -87,6 +88,17 @@ export function ChatPanel({ result, open, onClose, onShowSource }: {
             <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
               <div className={m.role === "user" ? "max-w-[85%] rounded-md bg-primary px-3 py-2 text-primary-foreground" : "max-w-[95%]"}>
                 <p className="whitespace-pre-wrap">{m.text}</p>
+                {m.sections?.map((s) => (
+                  <section key={s.title} className="mt-3 border-l-4 border-primary bg-card p-3">
+                    <h3 className="font-bold">{s.title}</h3>
+                    <p className="mt-1">{s.text}</p>
+                    {s.sources.length > 0 && (
+                      <button onClick={() => onShowSource(s.sources)} className="focus-nhs mt-1 text-sm font-bold text-primary underline underline-offset-4">
+                        Show source
+                      </button>
+                    )}
+                  </section>
+                ))}
                 {m.role === "assistant" && (m.sources?.length || m.mode === "demo") ? (
                   <div className="mt-1 flex items-center gap-3 text-sm">
                     {m.sources && m.sources.length > 0 && (

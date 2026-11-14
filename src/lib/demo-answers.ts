@@ -1,9 +1,31 @@
-export type ChatAnswer = { answer: string; sources: string[]; mode: "ai" | "demo" };
+export type Section = { title: string; text: string; sources: string[] };
+export type ChatAnswer = { answer: string; sources: string[]; sections: Section[]; mode: "ai" | "demo" };
+export const SECTION_TITLES = ["What the report says", "What remains uncertain", "What happens next"] as const;
+export const isSummaryRequest = (q: string) => /summar|what did the scan find|overview|explain (my|the) (report|result|scan)/i.test(q);
+
+const SUMMARIES: Record<string, Section[]> = {
+  chest: [
+    { title: SECTION_TITLES[0], text: "The scan found a 7 mm solid nodule (a small spot) in the upper part of your right lung. No enlarged lymph nodes or fluid around the lungs were seen. There are mild emphysema changes (some wear to the small air sacs) in both upper lungs.", sources: ["r2", "r4", "r5", "r6"] },
+    { title: SECTION_TITLES[1], text: "The radiologist describes the nodule as \"indeterminate\": its nature can't be decided from this scan alone. The report doesn't say what the nodule is.", sources: ["r3", "r7"] },
+    { title: SECTION_TITLES[2], text: "The radiologist recommends comparing this scan with any earlier chest images. If none are available, they suggest a follow-up CT in 3 months. Your care team says they're requesting earlier images from your GP and will contact you. No booking is shown in your available record.", sources: ["r8", "n1", "n2"] },
+  ],
+  knee: [
+    { title: SECTION_TITLES[0], text: "There is a horizontal tear in the back part of the inner knee cartilage (medial meniscus), a small amount of extra fluid, and mild cartilage thinning on the inner side. The main ligaments are intact.", sources: ["k2", "k3", "k4", "k5", "k6"] },
+    { title: SECTION_TITLES[1], text: "The report doesn't say how the tear should be treated or whether the cartilage thinning is causing your symptoms. These are questions for your orthopaedic team.", sources: [] },
+    { title: SECTION_TITLES[2], text: "The radiologist recommends an orthopaedic review. Your care team has booked a clinic appointment for 2 December 2026 at 10:30.", sources: ["k8", "m1"] },
+  ],
+};
 
 // Preset answers for demo mode (used when live AI is off or unavailable).
 export function demoAnswer(resultId: string, q: string): Omit<ChatAnswer, "mode"> {
-  const t = q.toLowerCase();
   const chest = resultId.startsWith("ct-chest");
+  if (isSummaryRequest(q))
+    return { answer: "Here's a summary of your result.", sources: [], sections: SUMMARIES[chest ? "chest" : "knee"] };
+  return { sections: [], ...plainAnswer(chest, q) };
+}
+
+function plainAnswer(chest: boolean, q: string): { answer: string; sources: string[] } {
+  const t = q.toLowerCase();
   if (chest) {
     if (/cancer|serious|tumou?r|malignan/.test(t))
       return {

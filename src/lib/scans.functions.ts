@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { demoAnswer, type ChatAnswer } from "./demo-answers";
+import { demoAnswer, isSummaryRequest, SECTION_TITLES, type ChatAnswer } from "./demo-answers";
 
 export const listResults = createServerFn({ method: "GET" }).handler(async () => {
   const { listPatientRecords, SESSION_PATIENT_ID } = await import("./records.server");
@@ -27,6 +27,7 @@ Rules:
 - When the record doesn't answer something, say so and suggest a question for the care team.
 - If the patient describes current symptoms or an emergency, tell them to use the "Get medical help" link, call 111, or 999 in an emergency.
 - Keep answers short: 2-4 sentences.
+- If SUMMARY MODE is on: put a one-line intro in "answer" and fill "sections" with exactly three items titled, in order: "${SECTION_TITLES[0]}", "${SECTION_TITLES[1]}", "${SECTION_TITLES[2]}". Each 2-3 short sentences with its own "sources". If the report leaves something unstated, say so in the right section. Otherwise "sections" must be empty.
 - "sources": IDs of the exact sentences supporting findings or follow-up statements. Empty if none.`;
 
 export const askAboutResult = createServerFn({ method: "POST" })
@@ -59,6 +60,7 @@ export const askAboutResult = createServerFn({ method: "POST" })
         : "CARE-TEAM NOTE: none shared.",
     ].join("\n");
 
+    const summary = isSummaryRequest(data.question);
     try {
       const { generateResponse } = await import("@lovable.dev/ai-gateway");
       const res = await generateResponse({
@@ -67,7 +69,7 @@ export const askAboutResult = createServerFn({ method: "POST" })
         input: [
           { role: "user", content: `<record>\n${record}\n</record>` },
           ...data.history.map((t) => ({ role: t.role, content: t.text })),
-          { role: "user", content: data.question },
+          { role: "user", content: `${data.question}\n\n(SUMMARY MODE: ${summary ? "on" : "off"})` },
         ],
         text: {
           format: {
@@ -76,8 +78,20 @@ export const askAboutResult = createServerFn({ method: "POST" })
             strict: true,
             schema: {
               type: "object",
-              properties: { answer: { type: "string" }, sources: { type: "array", items: { type: "string" } } },
-              required: ["answer", "sources"],
+              properties: {
+                answer: { type: "string" },
+                sources: { type: "array", items: { type: "string" } },
+                sections: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: { title: { type: "string" }, text: { type: "string" }, sources: { type: "array", items: { type: "string" } } },
+                    required: ["title", "text", "sources"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["answer", "sources", "sections"],
               additionalProperties: false,
             },
           },
@@ -88,10 +102,11 @@ export const askAboutResult = createServerFn({ method: "POST" })
         if (item.type === "message")
           for (const c of item.content) if (c.type === "output_text") text += c.text;
       }
-      const parsed = JSON.parse(text) as { answer: string; sources: string[] };
+      const parsed = JSON.parse(text) as Omit<ChatAnswer, "mode">;
       return {
         answer: parsed.answer,
         sources: parsed.sources.filter((id) => validIds.has(id)),
+        sections: (summary ? parsed.sections : []).map((s) => ({ ...s, sources: s.sources.filter((id) => validIds.has(id)) })),
         mode: "ai",
         resultId: rec.id,
       };
