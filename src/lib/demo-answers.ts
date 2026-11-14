@@ -3,7 +3,7 @@ export type ChatAnswer = { answer: string; sources: string[]; sections: Section[
 export const SECTION_TITLES = ["What the report says", "What remains uncertain", "What happens next"] as const;
 export const isSummaryRequest = (q: string) => /summar|what did the scan find|overview|explain (my|the) (report|result|scan)/i.test(q);
 
-const SUMMARIES: Record<string, Section[]> = {
+const SUMMARIES: { chest: Section[]; knee: Section[] } = {
   chest: [
     { title: SECTION_TITLES[0], text: "The scan found a 7 mm solid nodule (a small spot) in the upper part of your right lung. No enlarged lymph nodes or fluid around the lungs were seen. There are mild emphysema changes (some wear to the small air sacs) in both upper lungs.", sources: ["r2", "r4", "r5", "r6"] },
     { title: SECTION_TITLES[1], text: "The radiologist describes the nodule as \"indeterminate\": its nature can't be decided from this scan alone. The report doesn't say what the nodule is.", sources: ["r3", "r7"] },
