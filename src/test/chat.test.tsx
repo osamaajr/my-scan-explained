@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { getPatientRecord, SESSION_PATIENT_ID } from "@/lib/records.server";
-import { demoAnswer } from "@/lib/demo-answers";
-import { setPresetMode } from "@/lib/preset-mode";
 import { ReportSections, ReportSentence } from "@/components/ReportView";
 
 vi.mock("@/lib/scans.functions", () => ({ askAboutResult: vi.fn() }));
@@ -30,57 +28,34 @@ async function send(text: string) {
     fireEvent.click(screen.getByLabelText("Send"));
   });
 }
-const reply = (
-  rec: typeof chest,
-  q: string,
-  mode: "live" | "preset" | "fallback" | "safety",
-  extra = {},
-) => ({
-  ...demoAnswer(rec.id, q),
-  mode,
+const liveReply = (rec: typeof chest, answer: string, sources: string[] = []) => ({
+  answer,
+  sources,
+  sections: [],
+  mode: "live" as const,
   resultId: rec.id,
-  ...extra,
 });
 
 beforeEach(() => {
   clearConversations();
-  setPresetMode(false);
   mockAsk.mockReset();
 });
 afterEach(cleanup);
 
-describe("answer mode is visible", () => {
-  it("labels live, preset and fallback answers differently", async () => {
+describe("there is no preset/offline toggle", () => {
+  it("every question is sent to the server with no preset flag", async () => {
     render(<Panel rec={chest} />);
-    mockAsk.mockResolvedValueOnce(reply(chest, "Does this mean I have cancer?", "live"));
+    mockAsk.mockResolvedValueOnce(liveReply(chest, "The report describes a 7 mm nodule."));
     await send("Does this mean I have cancer?");
-    expect(screen.getByText("Live AI answer")).toBeInTheDocument();
-
-    mockAsk.mockResolvedValueOnce(
-      reply(chest, "Is my next scan booked?", "fallback", { fallbackReason: "timeout" }),
-    );
-    await send("Is my next scan booked?");
-    expect(screen.getByText(/Live AI timed out · preset answer shown/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Preset demo mode"));
-    mockAsk.mockResolvedValueOnce(reply(chest, "What happens next?", "preset"));
-    await send("What happens next?");
-    expect(screen.getByText("Preset demo answer")).toBeInTheDocument();
-    expect(mockAsk.mock.calls.at(-1)![0]!.data.preset).toBe(true);
+    expect(screen.queryByText("Preset demo mode")).not.toBeInTheDocument();
+    expect(mockAsk.mock.calls[0]![0]!.data).toEqual({
+      resultId: chest.id,
+      question: "Does this mean I have cancer?",
+      history: [],
+    });
   });
 
-  it("keeps preset mode selected when switching scans", async () => {
-    const { rerender } = render(<Panel rec={chest} />);
-    fireEvent.click(screen.getByLabelText("Preset demo mode"));
-    rerender(<Panel rec={knee} />);
-    expect(screen.getByLabelText("Preset demo mode")).toBeChecked();
-    expect(screen.getByText("Answers: preset")).toBeInTheDocument();
-    mockAsk.mockResolvedValueOnce(reply(knee, "Is my next scan booked?", "preset"));
-    await send("Is my next scan booked?");
-    expect(mockAsk.mock.calls[0]![0]!.data).toMatchObject({ resultId: knee.id, preset: true });
-  });
-
-  it("shows the fixed NHS help guidance for a safety reply", async () => {
+  it("shows the fixed NHS help guidance for a safety reply, without calling it a preset", async () => {
     render(<Panel rec={chest} />);
     mockAsk.mockResolvedValueOnce({
       answer: "It sounds like…",
@@ -96,13 +71,20 @@ describe("answer mode is visible", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText("Get medical help").length).toBeGreaterThanOrEqual(2); // header link + panel
   });
+
+  it("shows a plain apology, not report content, when the server call fails outright", async () => {
+    render(<Panel rec={chest} />);
+    mockAsk.mockRejectedValueOnce(new Error("network down"));
+    await send("Is my next scan booked?");
+    expect(screen.getByText(/couldn't reach the assistant/)).toBeInTheDocument();
+  });
 });
 
 describe("source highlights", () => {
   it("Show source passes the cited sentence IDs, and those sentences render highlighted", async () => {
     const onShowSource = vi.fn();
     render(<Panel rec={chest} onShowSource={onShowSource} />);
-    mockAsk.mockResolvedValueOnce(reply(chest, "Does this mean I have cancer?", "preset"));
+    mockAsk.mockResolvedValueOnce(liveReply(chest, "It's indeterminate.", ["r2", "r3", "r8"]));
     await send("Does this mean I have cancer?");
     fireEvent.click(screen.getByText("Show source"));
     const ids = onShowSource.mock.calls[0]![0] as string[];
@@ -126,11 +108,7 @@ describe("source highlights", () => {
 describe("switching scans while a reply is pending", () => {
   it("never shows the chest reply in the knee chat, and files it under the chest scan", async () => {
     let resolve!: (v: unknown) => void;
-    mockAsk.mockReturnValueOnce(
-      new Promise((r) => {
-        resolve = r;
-      }) as never,
-    );
+    mockAsk.mockReturnValueOnce(new Promise((r) => (resolve = r)) as never);
     const { rerender } = render(<Panel rec={chest} />);
     await send("Does this mean I have cancer?");
     expect(screen.getByText("Reading your report…")).toBeInTheDocument();
@@ -138,7 +116,7 @@ describe("switching scans while a reply is pending", () => {
     rerender(<Panel rec={knee} />);
     expect(screen.getByText(/your knee MRI/)).toBeInTheDocument();
     await act(async () => {
-      resolve(reply(chest, "Does this mean I have cancer?", "live"));
+      resolve(liveReply(chest, "The 7 mm nodule is indeterminate."));
     });
     expect(screen.queryByText(/7 mm nodule/)).not.toBeInTheDocument();
     expect(screen.queryByText("Reading your report…")).not.toBeInTheDocument();

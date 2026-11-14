@@ -1,44 +1,75 @@
 import { describe, expect, it, vi } from "vitest";
 import { getPatientRecord, SESSION_PATIENT_ID } from "@/lib/records.server";
 import { answerQuestion, type ModelCaller } from "@/lib/answer";
-import { demoAnswer, PRESET_CANT_ANSWER } from "@/lib/demo-answers";
+import { COULD_NOT_ANSWER, isSummaryRequest, SECTION_TITLES } from "@/lib/answer-types";
 import { checkChestBooking, checkChestCancer, checkKneeBooking, unknownSources } from "./grounding";
 
 const chest = getPatientRecord(SESSION_PATIENT_ID, "ct-chest-2026-11-12")!;
 const knee = getPatientRecord(SESSION_PATIENT_ID, "mri-knee-2026-10-28")!;
-const ask = (
-  rec = chest,
-  question: string,
-  preset = true,
-  model: ModelCaller = vi.fn(),
-  timeoutMs?: number,
-) => answerQuestion(rec, { question, history: [], preset }, model, timeoutMs);
+const ask = (rec: typeof chest, question: string, model: ModelCaller, timeoutMs?: number) =>
+  answerQuestion(rec, { question, history: [] }, model, timeoutMs);
 
-describe("preset answers are correct and grounded", () => {
+// JSON a well-behaved model would return for each scripted demo question.
+const chestCancerJSON = JSON.stringify({
+  answer:
+    'It\'s understandable to worry. The report doesn\'t say whether this is cancer. It describes a 7 mm nodule in the right upper lung that is "indeterminate" — its nature can\'t be decided from this scan alone. A question for your care team: "What will comparing my earlier scans tell us?"',
+  sources: ["r2", "r3", "r8"],
+  sections: [],
+});
+const chestBookingJSON = JSON.stringify({
+  answer:
+    "No booking is shown in your available record. The radiologist recommends comparing with previous chest imaging, or a follow-up CT in 3 months if none is available. Your care team is requesting your earlier images and will contact you.",
+  sources: ["r8", "n1", "n2"],
+  sections: [],
+});
+const kneeBookingJSON = JSON.stringify({
+  answer:
+    "The radiologist recommends an orthopaedic review. Your care team has booked an appointment for 2 December 2026 at 10:30.",
+  sources: ["k8", "m1"],
+  sections: [],
+});
+
+describe("isSummaryRequest", () => {
+  it("treats summary wording as a summary request", () => {
+    for (const q of [
+      "What did the scan find?",
+      "summarise my result",
+      "explain my report",
+      "give me an overview",
+    ])
+      expect(isSummaryRequest(q)).toBe(true);
+  });
+  it("does not treat a follow-up question as a summary request", () => {
+    for (const q of [
+      "Does this mean I have cancer?",
+      "What does indeterminate mean?",
+      "Is my next scan booked?",
+    ])
+      expect(isSummaryRequest(q)).toBe(false);
+  });
+});
+
+describe("live answers are correct and grounded, given a well-formed model reply", () => {
   it("chest CT: cancer question keeps 7 mm and the uncertainty, citing supporting sentences", async () => {
-    expect(checkChestCancer(chest, await ask(chest, "Does this mean I have cancer?"))).toEqual([]);
+    const a = await ask(chest, "Does this mean I have cancer?", async () => chestCancerJSON);
+    expect(a.mode).toBe("live");
+    expect(checkChestCancer(chest, a)).toEqual([]);
   });
   it("chest CT: booking question separates recommendation from booking", async () => {
-    expect(checkChestBooking(chest, await ask(chest, "Is my next scan booked?"))).toEqual([]);
+    const a = await ask(chest, "Is my next scan booked?", async () => chestBookingJSON);
+    expect(a.mode).toBe("live");
+    expect(checkChestBooking(chest, a)).toEqual([]);
   });
   it("knee MRI: booking question gives the confirmed appointment", async () => {
-    expect(checkKneeBooking(knee, await ask(knee, "Is my next scan booked?"))).toEqual([]);
+    const a = await ask(knee, "Is my next scan booked?", async () => kneeBookingJSON);
+    expect(a.mode).toBe("live");
+    expect(checkKneeBooking(knee, a)).toEqual([]);
   });
-  it("every preset source ID exists in its record", () => {
-    const qs = [
-      "What did the scan find?",
-      "What does this term mean?",
-      "What happens next?",
-      "Does this mean I have cancer?",
-      "Is my next scan booked?",
-      "What does the report say?",
-    ];
-    for (const rec of [chest, knee])
-      for (const q of qs) {
-        const a = demoAnswer(rec.id, q);
-        expect(unknownSources(rec, a)).toEqual([]);
-        for (const s of a.sections) expect(unknownSources(rec, s)).toEqual([]);
-      }
+  it("drops source IDs the model invents that aren't in the record", async () => {
+    const a = await ask(chest, "Does this mean I have cancer?", async () =>
+      JSON.stringify({ answer: "Text", sources: ["r2", "zz9"], sections: [] }),
+    );
+    expect(a).toMatchObject({ mode: "live", sources: ["r2"] });
   });
 });
 
@@ -73,78 +104,79 @@ describe("grounding checks catch bad answers", () => {
       }),
     ).toContain("claims a confirmed booking");
   });
+  it("every record sentence ID is a valid source", () => {
+    for (const rec of [chest, knee])
+      expect(unknownSources(rec, { sources: ["not-an-id"] })).toEqual(["not-an-id"]);
+  });
 });
 
-describe("answer modes", () => {
-  it("preset mode never calls the model", async () => {
-    const model = vi.fn();
-    expect((await ask(chest, "Is my next scan booked?", true, model)).mode).toBe("preset");
-    expect(model).not.toHaveBeenCalled();
-  });
-
-  it("preset mode says the demo can't answer unrecognised questions, without blaming the record", async () => {
-    const a = await ask(chest, "Can I still go swimming?");
-    expect(a.answer).toBe(PRESET_CANT_ANSWER);
-    expect(a.answer).not.toMatch(
-      /record (doesn'?t|does not)|not in your record|isn'?t in your record/i,
+describe("no preset/offline mode: everything but safety goes to the model", () => {
+  it("every non-symptom question calls the model, whatever it is", async () => {
+    const model = vi.fn(async () =>
+      JSON.stringify({ answer: "Here's an answer.", sources: [], sections: [] }),
     );
-    expect(a.sources).toEqual([]);
+    for (const q of [
+      "Does this mean I have cancer?",
+      "Can I still go swimming?",
+      "What's the weather like?",
+    ]) {
+      await ask(chest, q, model);
+    }
+    expect(model).toHaveBeenCalledTimes(3);
   });
 
-  it("live mode returns the model's answer and drops unknown source IDs", async () => {
-    const model: ModelCaller = async () =>
-      JSON.stringify({ answer: "Live text", sources: ["r2", "zz9"], sections: [] });
-    const a = await ask(chest, "Does this mean I have cancer?", false, model);
-    expect(a).toMatchObject({ mode: "live", answer: "Live text", sources: ["r2"] });
-  });
-
-  it("times out a hung live call, aborts it and falls back visibly", async () => {
+  it("times out a hung live call, aborts it, and shows a plain apology (not report content)", async () => {
     let signal: AbortSignal | undefined;
     const model: ModelCaller = (args) => {
       signal = args.signal;
       return new Promise(() => {});
     };
     const started = Date.now();
-    const a = await ask(chest, "Does this mean I have cancer?", false, model, 50);
+    const a = await ask(chest, "Does this mean I have cancer?", model, 50);
     expect(Date.now() - started).toBeLessThan(1000);
-    expect(a).toMatchObject({ mode: "fallback", fallbackReason: "timeout" });
+    expect(a).toMatchObject({ mode: "error", answer: COULD_NOT_ANSWER, sources: [], sections: [] });
     expect(signal?.aborted).toBe(true);
-    expect(checkChestCancer(chest, a)).toEqual([]);
   });
 
-  it("falls back when the gateway errors or returns unusable JSON", async () => {
-    const vi1 = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("shows the same plain apology when the gateway errors or returns unusable JSON", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(
-      await ask(chest, "Is my next scan booked?", false, async () => {
+      await ask(chest, "Is my next scan booked?", async () => {
         throw new Error("no key");
       }),
-    ).toMatchObject({ mode: "fallback", fallbackReason: "unavailable" });
-    expect(
-      await ask(chest, "Is my next scan booked?", false, async () => "not json"),
-    ).toMatchObject({ mode: "fallback", fallbackReason: "invalid_response" });
-    vi1.mockRestore();
-  });
-
-  it("fallback for an unrecognised question says live AI is unavailable", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const a = await ask(chest, "Can I still go swimming?", false, async () => {
-      throw new Error("down");
+    ).toMatchObject({ mode: "error", answer: COULD_NOT_ANSWER });
+    expect(await ask(chest, "Is my next scan booked?", async () => "not json")).toMatchObject({
+      mode: "error",
+      answer: COULD_NOT_ANSWER,
     });
-    expect(a.answer).toMatch(/live assistant isn't available/);
+    spy.mockRestore();
   });
 });
 
-describe("fixed safety check runs before either mode", () => {
-  for (const preset of [true, false])
-    it(`routes a current symptom to NHS help (${preset ? "preset" : "live"})`, async () => {
-      const model = vi.fn();
-      const a = await ask(chest, "I'm coughing up blood right now", preset, model);
-      expect(a).toMatchObject({ mode: "safety", urgent: true, sources: [] });
-      expect(model).not.toHaveBeenCalled();
-    });
+describe("fixed safety check runs before the model", () => {
+  it("routes a current symptom to NHS help without calling the model", async () => {
+    const model = vi.fn();
+    const a = await ask(chest, "I'm coughing up blood right now", model);
+    expect(a).toMatchObject({ mode: "safety", urgent: true, sources: [] });
+    expect(model).not.toHaveBeenCalled();
+  });
 
-  it("still answers a question about a symptom term in the report", async () => {
-    const a = await ask(chest, "What does persistent cough mean in my report?");
-    expect(a.mode).toBe("preset");
+  it("still sends a question about a symptom term in the report to the model", async () => {
+    const model = vi.fn(async () =>
+      JSON.stringify({ answer: "A persistent cough is...", sources: [], sections: [] }),
+    );
+    const a = await ask(chest, "What does persistent cough mean in my report?", model);
+    expect(a.mode).toBe("live");
+    expect(model).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SECTION_TITLES", () => {
+  it("has exactly the three fixed summary headings, in order", () => {
+    expect(SECTION_TITLES).toEqual([
+      "What the report says",
+      "What remains uncertain",
+      "What happens next",
+    ]);
   });
 });

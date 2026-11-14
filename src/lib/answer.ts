@@ -1,13 +1,13 @@
 // Answer pipeline for one question about one record. The model call is passed
-// in, so timeouts and fallbacks can be tested without credentials.
+// in, so timeouts and errors can be tested without credentials. There is no
+// preset/offline mode: every report-content question goes to the live model.
 import type { ScanRecord } from "./records.server";
 import {
-  demoAnswer,
-  isSummaryRequest,
   SECTION_TITLES,
+  isSummaryRequest,
+  COULD_NOT_ANSWER,
   type ChatAnswer,
-  type FallbackReason,
-} from "./demo-answers";
+} from "./answer-types";
 import { detectCurrentSymptoms, SAFETY_MESSAGE } from "./safety";
 
 export const LIVE_TIMEOUT_MS = 12_000;
@@ -112,11 +112,11 @@ function parse(text: string): Parsed | null {
 
 export async function answerQuestion(
   rec: ScanRecord,
-  req: { question: string; history: Turn[]; preset: boolean },
+  req: { question: string; history: Turn[] },
   callModel: ModelCaller,
   timeoutMs = LIVE_TIMEOUT_MS,
 ): Promise<ChatAnswer> {
-  // 1. Fixed safety check runs before either answer mode.
+  // Fixed safety check runs before the model is ever called.
   const symptoms = detectCurrentSymptoms(req.question);
   if (symptoms.match)
     return {
@@ -127,15 +127,6 @@ export async function answerQuestion(
       urgent: symptoms.urgent,
     };
 
-  // 2. Preset mode: canned answers only.
-  if (req.preset) return { ...demoAnswer(rec.id, req.question, "preset"), mode: "preset" };
-
-  // 3. Live mode, bounded by a timeout; any failure falls back visibly.
-  const fallback = (fallbackReason: FallbackReason): ChatAnswer => ({
-    ...demoAnswer(rec.id, req.question, "fallback"),
-    mode: "fallback",
-    fallbackReason,
-  });
   const summary = isSummaryRequest(req.question);
   const ctrl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -145,6 +136,10 @@ export async function answerQuestion(
       reject(new LiveTimeout());
     }, timeoutMs);
   });
+  const fail = (e: unknown): ChatAnswer => {
+    console.error("Live AI call failed", e);
+    return { answer: COULD_NOT_ANSWER, sources: [], sections: [], mode: "error" };
+  };
   let text: string;
   try {
     text = await Promise.race([
@@ -161,13 +156,12 @@ export async function answerQuestion(
       timeout,
     ]);
   } catch (e) {
-    console.error("Live AI unavailable, showing preset answer", e);
-    return fallback(e instanceof LiveTimeout ? "timeout" : "unavailable");
+    return fail(e instanceof LiveTimeout ? new Error("timeout") : e);
   } finally {
     clearTimeout(timer);
   }
   const parsed = parse(text);
-  if (!parsed) return fallback("invalid_response");
+  if (!parsed) return fail(new Error("invalid_response"));
   const valid = sentenceIds(rec);
   return {
     answer: parsed.answer,

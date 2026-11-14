@@ -3,16 +3,14 @@ import { X, Send } from "lucide-react";
 import { askAboutResult } from "@/lib/scans.functions";
 import { formatDate } from "@/components/AppShell";
 import { MedicalHelp } from "@/components/MedicalHelp";
-import { setPresetMode, usePresetMode } from "@/lib/preset-mode";
-import type { AnswerMode, FallbackReason, Section } from "@/lib/demo-answers";
+import type { AnswerMode, Section } from "@/lib/answer-types";
 
 type Msg = {
   role: "user" | "assistant";
   text: string;
   sources?: string[];
   sections?: Section[];
-  mode?: AnswerMode | "error";
-  fallbackReason?: FallbackReason | undefined;
+  mode?: AnswerMode | "clienterror";
 };
 type Result = { id: string; name: string; shortName: string; date: string };
 
@@ -24,34 +22,6 @@ export function clearConversations() {
 }
 
 const STARTERS = ["What did the scan find?", "What does this term mean?", "What happens next?"];
-
-const FALLBACK_LABEL: Record<FallbackReason, string> = {
-  timeout: "Live AI timed out",
-  unavailable: "Live AI unavailable",
-  invalid_response: "Live AI gave an unusable reply",
-};
-
-function ModeBadge({ m }: { m: Msg }) {
-  if (m.mode === "live")
-    return (
-      <span className="rounded-sm bg-success px-1.5 text-xs font-bold text-primary-foreground">
-        Live AI answer
-      </span>
-    );
-  if (m.mode === "preset")
-    return (
-      <span className="rounded-sm bg-accent px-1.5 text-xs font-bold text-accent-foreground">
-        Preset demo answer
-      </span>
-    );
-  if (m.mode === "fallback")
-    return (
-      <span className="rounded-sm border-2 border-destructive px-1.5 text-xs font-bold text-destructive">
-        {FALLBACK_LABEL[m.fallbackReason ?? "unavailable"]} · preset answer shown
-      </span>
-    );
-  return null;
-}
 
 export function ChatPanel({
   result,
@@ -71,7 +41,6 @@ export function ChatPanel({
   const [msgs, setMsgs] = useState<Msg[]>(() => conversations.get(result.id) ?? [greeting]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
-  const preset = usePresetMode();
   const live = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -79,8 +48,8 @@ export function ChatPanel({
   useEffect(() => {
     live.current = true;
     return () => {
-      live.current = false;
-    }; // this panel's scan was closed or switched
+      live.current = false; // this panel's scan was closed or switched
+    };
   }, []);
   useEffect(() => {
     conversations.set(result.id, msgs);
@@ -96,7 +65,7 @@ export function ChatPanel({
     // Error and fixed-safety messages aren't part of the conversation the model sees.
     const history = msgs
       .slice(1)
-      .filter((m) => m.mode !== "error" && m.mode !== "safety")
+      .filter((m) => m.mode !== "error" && m.mode !== "safety" && m.mode !== "clienterror")
       .map(({ role, text }) => ({ role, text }));
     setMsgs((m) => [...m, { role: "user", text: question }]);
     setInput("");
@@ -104,7 +73,7 @@ export function ChatPanel({
     const forId = result.id;
     let reply: Msg;
     try {
-      const res = await askAboutResult({ data: { resultId: forId, question, history, preset } });
+      const res = await askAboutResult({ data: { resultId: forId, question, history } });
       if (res.resultId !== forId) throw new Error("Answer was for a different result");
       reply = {
         role: "assistant",
@@ -112,13 +81,12 @@ export function ChatPanel({
         sources: res.sources,
         sections: res.sections,
         mode: res.mode,
-        fallbackReason: res.fallbackReason,
       };
     } catch {
       reply = {
         role: "assistant",
-        text: "Sorry, I couldn't answer just now. Please try again, or switch on preset demo mode.",
-        mode: "error",
+        text: "Sorry, I couldn't reach the assistant just now. Please try again.",
+        mode: "clienterror",
       };
     }
     if (live.current) {
@@ -156,24 +124,8 @@ export function ChatPanel({
             </button>
           </div>
         </div>
-        <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-2">
+        <div className="flex items-center border-b border-border bg-card px-4 py-2">
           <MedicalHelp compact />
-          <div className="flex items-center gap-2">
-            <span
-              className={`rounded-sm px-1.5 text-xs font-bold ${preset ? "bg-accent text-accent-foreground" : "bg-success text-primary-foreground"}`}
-            >
-              {preset ? "Answers: preset" : "Answers: live AI"}
-            </span>
-            <label className="flex items-center gap-2 text-sm font-bold">
-              <input
-                type="checkbox"
-                checked={preset}
-                onChange={(e) => setPresetMode(e.target.checked)}
-                className="size-4 accent-primary"
-              />
-              Preset demo mode
-            </label>
-          </div>
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
@@ -206,20 +158,14 @@ export function ChatPanel({
                     )}
                   </section>
                 ))}
-                {m.role === "assistant" &&
-                (m.sources?.length || (m.mode && m.mode !== "safety" && m.mode !== "error")) ? (
-                  <div className="mt-1 flex flex-wrap items-center gap-3 text-sm">
-                    {m.sources && m.sources.length > 0 && (
-                      <button
-                        onClick={() => onShowSource(m.sources!)}
-                        className="focus-nhs font-bold text-primary underline underline-offset-4"
-                      >
-                        Show source
-                      </button>
-                    )}
-                    <ModeBadge m={m} />
-                  </div>
-                ) : null}
+                {m.role === "assistant" && m.sources && m.sources.length > 0 && (
+                  <button
+                    onClick={() => onShowSource(m.sources!)}
+                    className="focus-nhs mt-1 text-sm font-bold text-primary underline underline-offset-4"
+                  >
+                    Show source
+                  </button>
+                )}
               </div>
             </div>
           ))}

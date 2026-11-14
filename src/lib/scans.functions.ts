@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { ChatAnswer } from "./demo-answers";
+import type { ChatAnswer } from "./answer-types";
 
 export const listResults = createServerFn({ method: "GET" }).handler(async () => {
   const { listPatientRecords, SESSION_PATIENT_ID } = await import("./records.server");
@@ -21,17 +21,14 @@ export const getResult = createServerFn({ method: "GET" })
 type Turn = { role: "user" | "assistant"; text: string };
 
 export const askAboutResult = createServerFn({ method: "POST" })
-  .inputValidator(
-    (d: { resultId: string; question: string; history: Turn[]; preset: boolean }) => ({
-      resultId: String(d.resultId),
-      question: String(d.question).slice(0, 1000),
-      history: (Array.isArray(d.history) ? d.history : []).slice(-10).map((t) => ({
-        role: t.role === "assistant" ? ("assistant" as const) : ("user" as const),
-        text: String(t.text).slice(0, 2000),
-      })),
-      preset: Boolean(d.preset),
-    }),
-  )
+  .inputValidator((d: { resultId: string; question: string; history: Turn[] }) => ({
+    resultId: String(d.resultId),
+    question: String(d.question).slice(0, 1000),
+    history: (Array.isArray(d.history) ? d.history : []).slice(-10).map((t) => ({
+      role: t.role === "assistant" ? ("assistant" as const) : ("user" as const),
+      text: String(t.text).slice(0, 2000),
+    })),
+  }))
   .handler(async ({ data }): Promise<ChatAnswer & { resultId: string }> => {
     const { getPatientRecord, SESSION_PATIENT_ID } = await import("./records.server");
     const rec = getPatientRecord(SESSION_PATIENT_ID, data.resultId);
