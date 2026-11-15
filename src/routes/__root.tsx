@@ -75,19 +75,17 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
-    // Replace these placeholders with the app's name and description when first building the app.
     // Each content route, / included, must still set its own head(). Never add og:image or
     // twitter:image here: every page without its own would inherit the root's preview image.
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Ask About My Scan" },
+      { title: "My Scan, Explained" },
       { name: "description", content: "Hackathon prototype: plain-English help with your scan results." },
-      { property: "og:title", content: "Ask About My Scan" },
+      { property: "og:title", content: "My Scan, Explained" },
       { property: "og:description", content: "Hackathon prototype: plain-English help with your scan results." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {

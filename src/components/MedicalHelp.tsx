@@ -14,7 +14,7 @@ export function MedicalHelp({
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className={`focus-nhs font-bold text-destructive underline underline-offset-4 ${compact ? "text-sm" : ""}`}
+        className={`focus-nhs font-bold underline underline-offset-4 ${compact ? "text-base text-primary" : "text-destructive"}`}
       >
         Get medical help
       </button>

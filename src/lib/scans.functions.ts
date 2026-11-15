@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import { COULD_NOT_GENERATE_OVERVIEW, OVERVIEW_QUESTION, type ChatAnswer } from "./answer-types";
+import type { ChatAnswer } from "./answer-types";
+import type { ModelCaller } from "./answer";
 
 export const listResults = createServerFn({ method: "GET" }).handler(async () => {
   const { listPatientRecords, SESSION_PATIENT_ID } = await import("./records.server");
@@ -17,7 +18,6 @@ export const getResult = createServerFn({ method: "GET" })
     const { getPatientRecord, SESSION_PATIENT_ID } = await import("./records.server");
     return getPatientRecord(SESSION_PATIENT_ID, data.id);
   });
-
 type Turn = { role: "user" | "assistant"; text: string };
 
 export const askAboutResult = createServerFn({ method: "POST" })
@@ -34,22 +34,16 @@ export const askAboutResult = createServerFn({ method: "POST" })
     const rec = getPatientRecord(SESSION_PATIENT_ID, data.resultId);
     if (!rec) throw new Error("Result not found");
     const { answerQuestion } = await import("./answer");
-    const { callGateway } = await import("./gateway.server");
-    const answer = await answerQuestion(rec, data, callGateway);
+    let callModel: ModelCaller;
+    let callVerifier: ModelCaller;
+    if (process.env.OPENAI_API_KEY) {
+      const provider = await import("./openai.server");
+      callModel = provider.callOpenAI;
+      callVerifier = provider.callOpenAIVerifier;
+    } else {
+      callModel = (await import("./gateway.server")).callGateway;
+      callVerifier = callModel;
+    }
+    const answer = await answerQuestion(rec, data, callModel, undefined, callVerifier);
     return { ...answer, resultId: rec.id };
-  });
-
-/** Generates the result page's "Overview in plain English" box from the
- * report. Always goes through the model — there is no stored overview text. */
-export const getOverview = createServerFn({ method: "GET" })
-  .inputValidator((d: { id: string }) => d)
-  .handler(async ({ data }): Promise<{ answer: string; sources: string[]; mode: "live" | "error" }> => {
-    const { getPatientRecord, SESSION_PATIENT_ID } = await import("./records.server");
-    const rec = getPatientRecord(SESSION_PATIENT_ID, data.id);
-    if (!rec) throw new Error("Result not found");
-    const { answerQuestion } = await import("./answer");
-    const { callGateway } = await import("./gateway.server");
-    const a = await answerQuestion(rec, { question: OVERVIEW_QUESTION, history: [] }, callGateway);
-    if (a.mode !== "live") return { answer: COULD_NOT_GENERATE_OVERVIEW, sources: [], mode: "error" };
-    return { answer: a.answer, sources: a.sources, mode: "live" };
   });

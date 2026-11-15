@@ -8,9 +8,9 @@ const resultsQuery = queryOptions({ queryKey: ["results"], queryFn: () => listRe
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Test results · Ask About My Scan" },
+      { title: "Test results · My Scan, Explained" },
       { name: "description", content: "Your scan results in a simulated NHS App, with plain-English explanations." },
-      { property: "og:title", content: "Test results · Ask About My Scan" },
+      { property: "og:title", content: "Test results · My Scan, Explained" },
       { property: "og:description", content: "Your scan results in a simulated NHS App, with plain-English explanations." },
     ],
   }),

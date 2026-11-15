@@ -5,12 +5,12 @@ export function AppShell({ children, back }: { children: ReactNode; back?: boole
   return (
     <div className="min-h-screen bg-background">
       <div className="bg-accent px-4 py-1.5 text-center text-sm font-bold text-accent-foreground">
-        Hackathon prototype · Simulated NHS App · Fictional patient
+        My Scan, Explained · Hackathon prototype · Simulated NHS App · Fictional patient
       </div>
       <header className="bg-header text-primary-foreground">
         <div className="mx-auto flex max-w-xl items-center justify-between px-4 py-3">
           <Link to="/" className="focus-nhs flex items-center gap-2 rounded-sm">
-            <span className="rounded-sm border-2 border-primary-foreground px-1.5 text-lg font-bold italic leading-tight">NHS</span>
+            <img src="/nhs-logo.png" alt="NHS" width="70" height="28" className="h-7 w-auto" />
             <span className="font-bold">App</span>
           </Link>
           <span className="text-sm">Sam Taylor · NHS no. 000 000 0000</span>

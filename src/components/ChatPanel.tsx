@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Send } from "lucide-react";
+import { FileText, X, Send } from "lucide-react";
 import { askAboutResult } from "@/lib/scans.functions";
 import { formatDate } from "@/components/AppShell";
 import { MedicalHelp } from "@/components/MedicalHelp";
@@ -21,7 +21,7 @@ export function clearConversations() {
   conversations.clear();
 }
 
-const STARTERS = ["What did the scan find?", "What does this term mean?", "What happens next?"];
+const STARTERS = ["What did the scan find?", "What happens next?", "Is my next scan booked?"];
 
 export function ChatPanel({
   result,
@@ -36,7 +36,7 @@ export function ChatPanel({
 }) {
   const greeting: Msg = {
     role: "assistant",
-    text: `I'm looking at your ${result.shortName} from ${formatDate(result.date, { day: "numeric", month: "long" })}. What would you like to understand?`,
+    text: `I can help explain your ${result.shortName} report from ${formatDate(result.date, { day: "numeric", month: "long" })} in everyday language. What would you like to know?`,
   };
   const [msgs, setMsgs] = useState<Msg[]>(() => conversations.get(result.id) ?? [greeting]);
   const [input, setInput] = useState("");
@@ -109,33 +109,37 @@ export function ChatPanel({
         role="dialog"
         aria-label={`Chat about your ${result.name}`}
         onClick={(e) => e.stopPropagation()}
-        className="flex h-[88vh] w-full max-w-xl flex-col bg-background shadow-2xl sm:h-[80vh] sm:rounded-md"
+        className="flex h-[88vh] w-full max-w-xl flex-col bg-card shadow-2xl sm:h-[80vh] sm:rounded-md"
       >
-        <div className="bg-header px-4 py-3 text-primary-foreground sm:rounded-t-md">
+        <div className="px-4 pb-2 pt-4 sm:rounded-t-md">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="text-sm">Ask about this result</p>
-              <h2 className="text-lg font-bold">
+              <h2 className="text-2xl font-bold leading-tight">Ask about this result</h2>
+              <p className="mt-1 text-base text-muted-foreground">
                 {result.name} · {formatDate(result.date)}
-              </h2>
+              </p>
             </div>
             <button onClick={onClose} aria-label="Close chat" className="focus-nhs rounded-sm p-1">
               <X className="size-6" />
             </button>
           </div>
         </div>
-        <div className="flex items-center border-b border-border bg-card px-4 py-2">
+        <div className="px-4 py-2">
           <MedicalHelp compact />
         </div>
+        <p className="px-4 pb-2 text-xs text-muted-foreground">
+          AI explains your report using its source lines and may make mistakes. It cannot diagnose or
+          change your care. Check medical decisions with your care team.
+        </p>
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3" aria-live="polite">
           {msgs.map((m, i) => (
             <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
               <div
                 className={
                   m.role === "user"
-                    ? "max-w-[85%] rounded-md bg-primary px-3 py-2 text-primary-foreground"
-                    : "max-w-[95%]"
+                    ? "max-w-[85%] rounded-3xl bg-chat-user px-4 py-3 text-foreground"
+                    : "max-w-[90%] rounded-3xl bg-chat-assistant px-4 py-3 text-foreground"
                 }
               >
                 <p className="whitespace-pre-wrap">{m.text}</p>
@@ -145,15 +149,16 @@ export function ChatPanel({
                   </div>
                 )}
                 {m.sections?.map((s) => (
-                  <section key={s.title} className="mt-3 border-l-4 border-primary bg-card p-3">
+                  <section key={s.title} className="mt-3 border-t border-border pt-3">
                     <h3 className="font-bold">{s.title}</h3>
                     <p className="mt-1">{s.text}</p>
                     {s.sources.length > 0 && (
                       <button
                         onClick={() => onShowSource(s.sources)}
-                        className="focus-nhs mt-1 text-sm font-bold text-primary underline underline-offset-4"
+                        className="focus-nhs mt-2 inline-flex items-center gap-1.5 text-sm font-bold text-primary underline underline-offset-4"
                       >
-                        Show source
+                        <FileText className="size-4" aria-hidden="true" />
+                        Show in report
                       </button>
                     )}
                   </section>
@@ -161,29 +166,34 @@ export function ChatPanel({
                 {m.role === "assistant" && m.sources && m.sources.length > 0 && (
                   <button
                     onClick={() => onShowSource(m.sources!)}
-                    className="focus-nhs mt-1 text-sm font-bold text-primary underline underline-offset-4"
+                    className="focus-nhs mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-primary underline underline-offset-4"
                   >
-                    Show source
+                    <FileText className="size-4" aria-hidden="true" />
+                    Show in report
                   </button>
                 )}
               </div>
             </div>
           ))}
-          {pending && <p className="text-muted-foreground">Reading your report…</p>}
-          {msgs.length === 1 && (
-            <div className="flex flex-col items-start gap-2 pt-1">
-              {STARTERS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => ask(s)}
-                  className="focus-nhs rounded-md border-2 border-primary bg-card px-3 py-2 font-bold text-primary"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
+          {pending && <p className="text-sm text-muted-foreground">Reading your report…</p>}
           <div ref={endRef} />
+        </div>
+
+        <div
+          aria-label="Suggested questions"
+          className="flex shrink-0 gap-2 overflow-x-auto px-4 py-3"
+        >
+          {STARTERS.filter((s) => !msgs.some((m) => m.role === "user" && m.text === s)).map((s) => (
+            <button
+              key={s}
+              type="button"
+              disabled={pending}
+              onClick={() => ask(s)}
+              className="focus-nhs shrink-0 rounded-xl border-2 border-primary bg-card px-3 py-2 text-sm font-bold text-primary disabled:opacity-50"
+            >
+              {s}
+            </button>
+          ))}
         </div>
 
         <form
@@ -191,16 +201,16 @@ export function ChatPanel({
             e.preventDefault();
             ask(input);
           }}
-          className="border-t border-border bg-card p-3"
+          className="shrink-0 bg-card px-4 pb-4"
         >
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 rounded-2xl border-2 border-input bg-card p-1.5">
             <label htmlFor="chat-q" className="sr-only">
               Your question
             </label>
             <textarea
               id="chat-q"
               ref={inputRef}
-              rows={2}
+              rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -209,22 +219,18 @@ export function ChatPanel({
                   ask(input);
                 }
               }}
-              placeholder="Type your question"
-              className="focus-nhs flex-1 resize-none rounded-sm border-2 border-input bg-background px-3 py-2"
+              placeholder="Ask a question"
+              className="focus-nhs min-h-12 min-w-0 flex-1 resize-none rounded-lg bg-card px-3 py-3 outline-none"
             />
             <button
               type="submit"
               disabled={pending || !input.trim()}
               aria-label="Send"
-              className="focus-nhs flex size-12 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+              className="focus-nhs flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground disabled:opacity-50"
             >
               <Send className="size-5" />
             </button>
           </div>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            AI explains your report only. It can't diagnose or change your care. Ask your care team
-            about decisions.
-          </p>
         </form>
       </div>
     </div>

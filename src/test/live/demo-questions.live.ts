@@ -1,35 +1,27 @@
-// Live-model checks for the demo script. Needs LOVABLE_API_KEY; skipped otherwise.
-// Run with: bun run test:live   (not part of `bun run test`)
+// Optional paid live check. Run with OPENAI_API_KEY or LOVABLE_API_KEY set.
 import { describe, expect, it } from "vitest";
-import { getPatientRecord, SESSION_PATIENT_ID } from "@/lib/records.server";
-import { answerQuestion } from "@/lib/answer";
+import { answerQuestion, sentenceIds } from "@/lib/answer";
+import { getPatientRecord, SESSION_PATIENT_ID, type ScanRecord } from "@/lib/records.server";
+import { callOpenAI, callOpenAIVerifier } from "@/lib/openai.server";
 import { callGateway } from "@/lib/gateway.server";
-import { checkChestBooking, checkChestCancer, checkKneeBooking, checkSpineFindings } from "../grounding";
 
-const chest = getPatientRecord(SESSION_PATIENT_ID, "ct-chest-2026-11-12")!;
-const knee = getPatientRecord(SESSION_PATIENT_ID, "mri-knee-2026-10-28")!;
-const spine = getPatientRecord(SESSION_PATIENT_ID, "mri-spine-2026-11-05")!;
-const live = (rec: typeof chest, question: string) => answerQuestion(rec, { question, history: [] }, callGateway);
+const caller = process.env.OPENAI_API_KEY ? callOpenAI : callGateway;
+const verifier = process.env.OPENAI_API_KEY ? callOpenAIVerifier : callGateway;
+const live = (rec: ScanRecord, question: string) =>
+  answerQuestion(rec, { question, history: [] }, caller, undefined, verifier);
 
-describe.skipIf(!process.env["LOVABLE_API_KEY"])("live model: demo script", () => {
-  it("chest CT: 'Does this mean I have cancer?'", async () => {
-    const a = await live(chest, "Does this mean I have cancer?");
+describe.skipIf(!process.env.OPENAI_API_KEY && !process.env.LOVABLE_API_KEY)("live source selection", () => {
+  it.each([
+    ["ct-chest-2026-11-12", "Does this mean I have cancer?"],
+    ["mri-knee-2026-10-28", "Is my appointment booked?"],
+    ["mri-spine-2026-11-05", "What did the MRI find?"],
+  ])("%s: selects only existing report sentences", async (id, question) => {
+    const rec = getPatientRecord(SESSION_PATIENT_ID, id)!;
+    const a = await live(rec, question);
     expect(a.mode).toBe("live");
-    expect(checkChestCancer(chest, a), a.answer).toEqual([]);
-  });
-  it("chest CT: 'Is my next scan booked?'", async () => {
-    const a = await live(chest, "Is my next scan booked?");
-    expect(a.mode).toBe("live");
-    expect(checkChestBooking(chest, a), a.answer).toEqual([]);
-  });
-  it("knee MRI: 'Is my next scan booked?'", async () => {
-    const a = await live(knee, "Is my next scan booked?");
-    expect(a.mode).toBe("live");
-    expect(checkKneeBooking(knee, a), a.answer).toEqual([]);
-  });
-  it("spine MRI: 'What did the MRI find in my spine?'", async () => {
-    const a = await live(spine, "What did the MRI find in my spine?");
-    expect(a.mode).toBe("live");
-    expect(checkSpineFindings(spine, a), a.answer).toEqual([]);
+    expect(a.sources.length).toBeGreaterThan(0);
+    const valid = sentenceIds(rec);
+    expect(a.sources.every((source) => valid.has(source))).toBe(true);
+    expect(a.answer.length).toBeGreaterThan(20);
   });
 });

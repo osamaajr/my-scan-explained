@@ -81,12 +81,12 @@ describe("there is no preset/offline toggle", () => {
 });
 
 describe("source highlights", () => {
-  it("Show source passes the cited sentence IDs, and those sentences render highlighted", async () => {
+  it("Show in report passes the cited sentence IDs, and those sentences render highlighted", async () => {
     const onShowSource = vi.fn();
     render(<Panel rec={chest} onShowSource={onShowSource} />);
     mockAsk.mockResolvedValueOnce(liveReply(chest, "It's indeterminate.", ["r4", "r5", "r12"]));
     await send("Does this mean I have cancer?");
-    fireEvent.click(screen.getByText("Show source"));
+    fireEvent.click(screen.getByText("Show in report"));
     const ids = onShowSource.mock.calls[0]![0] as string[];
     expect(ids).toEqual(["r4", "r5", "r12"]);
     cleanup();

@@ -31,4 +31,4 @@ use the editor.
 
 ## Project rules
 - Fictional patient records live server-side in `src/lib/records.server.ts`, filtered by a simulated session patient; why: chat context must only include that patient's released report and patient-visible note.
-- Chat answers come from `askAboutResult` (server fn, Gateway SDK, JSON with sentence-ID sources) with preset demo answers as fallback; why: "Show source" highlighting and offline demos.
+- Chat answers come from `askAboutResult` (server fn). The live model writes one plain-English paraphrase per selected sentence from the patient's released report or patient-visible note. Server checks and a separate verification call gate paraphrases; unsafe or unverifiable ones fall back to exact source wording. No preset report answers; why: understandable, source-grounded answers and "Show source" highlighting.
