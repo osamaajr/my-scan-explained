@@ -47,14 +47,11 @@ When hosted through Lovable, the app can use the Lovable AI gateway if `OPENAI_A
 
 ## How an answer is produced
 
-```mermaid
-flowchart LR
-    A[Patient question] --> B[Server selects the patient's released result]
-    B --> C[Live model selects source sentences and explains them]
-    C --> D[Rules and second model check the paraphrases]
-    D --> E[Answer with links to report lines]
-    D --> F[Exact source wording if simplification fails]
-```
+1. The patient asks a question about a selected result.
+2. The server retrieves that patient's released report and visible care-team note.
+3. A live AI model selects relevant source sentences and explains them in plain English.
+4. Server-side rules and a second model check each explanation against its source.
+5. The answer links back to the report. If a simplification cannot be verified, the app shows the exact source wording.
 
 The demo's fictional records are defined server-side in `src/lib/records.server.ts`. `src/lib/scans.functions.ts` exposes the selected result and chat endpoint. `src/lib/answer.ts` contains the source-grounding and verification pipeline. `src/lib/openai.server.ts` handles local OpenAI calls; `src/lib/gateway.server.ts` handles the Lovable gateway path.
 
