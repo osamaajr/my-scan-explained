@@ -13,7 +13,7 @@ export const listResults = createServerFn({ method: "GET" }).handler(async () =>
 });
 
 export const getResult = createServerFn({ method: "GET" })
-  .inputValidator((d: { id: string }) => d)
+  .validator((d: { id: string }) => d)
   .handler(async ({ data }) => {
     const { getPatientRecord, SESSION_PATIENT_ID } = await import("./records.server");
     return getPatientRecord(SESSION_PATIENT_ID, data.id);
@@ -21,7 +21,7 @@ export const getResult = createServerFn({ method: "GET" })
 type Turn = { role: "user" | "assistant"; text: string };
 
 export const askAboutResult = createServerFn({ method: "POST" })
-  .inputValidator((d: { resultId: string; question: string; history: Turn[] }) => ({
+  .validator((d: { resultId: string; question: string; history: Turn[] }) => ({
     resultId: String(d.resultId),
     question: String(d.question).slice(0, 1000),
     history: (Array.isArray(d.history) ? d.history : []).slice(-10).map((t) => ({
